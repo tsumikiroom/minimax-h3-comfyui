@@ -1,0 +1,4 @@
+# ローカル実行時の生成物
+killswitch.log
+airbag.status
+__pycache__/
