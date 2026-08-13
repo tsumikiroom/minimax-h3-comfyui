@@ -28,7 +28,7 @@ LENGTH = int(sys.argv[1]) if len(sys.argv) > 1 else 124
 # 2026-08-14 A/B/C比較: steps8=消滅, sa_solver=大幅軽減, strength0.6=効果なし)
 STEPS = int(sys.argv[2]) if len(sys.argv) > 2 else 4
 USE_LORA = bool(int(sys.argv[3])) if len(sys.argv) > 3 else True
-USE_EASYCACHE = bool(int(sys.argv[4])) if len(sys.argv) > 4 else True
+USE_EASYCACHE = bool(int(sys.argv[4])) if len(sys.argv) > 4 else False  # 4steps では予測置換リスク>節約
 SAMPLER = sys.argv[5] if len(sys.argv) > 5 else "sa_solver"  # er_sde より格子ノイズ耐性が高い
 LAST_IMAGE = sys.argv[6] if len(sys.argv) > 6 else None   # 指定すると flf2v になる("-" でスキップ)
 if LAST_IMAGE == "-":
