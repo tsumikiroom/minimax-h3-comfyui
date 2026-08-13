@@ -8,11 +8,14 @@
     python run_i2v.py 124 25 0 1 res_multistep   # LoRA無し25steps(記事構成の再現)
 """
 import json
+import os
 import sys
 import urllib.request
 
 SERVER = "http://127.0.0.1:8000"
-IMAGE = "Cityscape_NY.jpg"
+# H3_IMAGE 環境変数で入力画像を差し替え。"none" で first_frame 無し = T2V
+# (公式 t2v テンプレートも同じノードで first_frame を繋がないだけ)
+IMAGE = os.environ.get("H3_IMAGE", "Cityscape_NY.jpg")
 WIDTH, HEIGHT = 640, 640          # 記事の I2V 解像度
 FPS = 24.0
 # 既定 LoRA: 2026-08-10 の同シード比較で音・動き・ディテールすべて最良だった Kijai LightX2V 蒸留。
@@ -21,17 +24,19 @@ LORA = "minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy.safetensors"
 SEED = 12345
 
 LENGTH = int(sys.argv[1]) if len(sys.argv) > 1 else 124
+# steps は2段構え: ドラフト4 / キープ級は同シードで8(暗部×激しい動きの格子ノイズが8で消える。
+# 2026-08-14 A/B/C比較: steps8=消滅, sa_solver=大幅軽減, strength0.6=効果なし)
 STEPS = int(sys.argv[2]) if len(sys.argv) > 2 else 4
 USE_LORA = bool(int(sys.argv[3])) if len(sys.argv) > 3 else True
 USE_EASYCACHE = bool(int(sys.argv[4])) if len(sys.argv) > 4 else True
-SAMPLER = sys.argv[5] if len(sys.argv) > 5 else "er_sde"
+SAMPLER = sys.argv[5] if len(sys.argv) > 5 else "sa_solver"  # er_sde より格子ノイズ耐性が高い
 LAST_IMAGE = sys.argv[6] if len(sys.argv) > 6 else None   # 指定すると flf2v になる("-" でスキップ)
 if LAST_IMAGE == "-":
     LAST_IMAGE = None
 LORA = sys.argv[7] if len(sys.argv) > 7 else LORA          # LoRA ファイル差し替え
 LORA_STRENGTH = float(sys.argv[8]) if len(sys.argv) > 8 else 0.75
 
-PROMPT = (
+PROMPT = os.environ.get("H3_PROMPT") or (
     "A cinematic view of the city skyline at dusk. The camera slowly pushes in as "
     "lights flicker on across the buildings and thin clouds drift past. "
     "Audio: distant city ambience, low traffic hum, a faint breeze."
@@ -48,15 +53,17 @@ workflow = {
         "vae_name": "minimax_h3_video_vae_fp16.safetensors"}},
     "4": {"class_type": "VAELoader", "inputs": {
         "vae_name": "minimax_h3_audio_vae_fp32.safetensors"}},
-    "5": {"class_type": "LoadImage", "inputs": {"image": IMAGE}},
-    "6": {"class_type": "ImageScale", "inputs": {
-        "image": ["5", 0], "upscale_method": "lanczos",
-        "width": WIDTH, "height": HEIGHT, "crop": "center"}},
     "7": {"class_type": "MiniMaxH3ImageToVideo", "inputs": {
         "clip": ["2", 0], "vae": ["3", 0], "prompt": PROMPT,
-        "width": WIDTH, "height": HEIGHT, "length": LENGTH,
-        "first_frame": ["6", 0]}},
+        "width": WIDTH, "height": HEIGHT, "length": LENGTH}},
 }
+
+if IMAGE.lower() != "none":  # i2v: first_frame を接続。"none" なら T2V
+    workflow["5"] = {"class_type": "LoadImage", "inputs": {"image": IMAGE}}
+    workflow["6"] = {"class_type": "ImageScale", "inputs": {
+        "image": ["5", 0], "upscale_method": "lanczos",
+        "width": WIDTH, "height": HEIGHT, "crop": "center"}}
+    workflow["7"]["inputs"]["first_frame"] = ["6", 0]
 
 if LAST_IMAGE:
     workflow["30"] = {"class_type": "LoadImage", "inputs": {"image": LAST_IMAGE}}
@@ -100,6 +107,8 @@ if USE_LORA:
     tag += f"_{lid[:28]}_st{LORA_STRENGTH:g}"
 if LAST_IMAGE:
     tag += "_flf2v"
+img_id = "t2v" if IMAGE.lower() == "none" else os.path.splitext(os.path.basename(IMAGE))[0][:16]
+tag += f"_{img_id}"
 workflow["16"] = {"class_type": "SaveVideo", "inputs": {
     "video": ["15", 0], "filename_prefix": f"video/MiniMax_H3_{tag}",
     "format": "auto", "codec": "auto"}}
